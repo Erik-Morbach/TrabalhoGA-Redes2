@@ -288,4 +288,3 @@ Nenhuma foi escrita ainda.
 - **Evidências de CLI:** texto colado com o prompt e a linha do comando, nunca captura de tela. Simulation: captura com a coluna *Time*. HTTP: captura do Web Browser.
 - **Prazo:** a data original (01/10/2026) já passou. Confirmar com o professor.
 - **Etapa 2 (próxima):** partir de uma cópia do `etapa1.pkt` e **não alterar a matriz**. Acrescentar FIL-R1, FIL-R2, as LANs da filial e RIPv2 (valores em `enderecosRoteadores.md`).
-- **Ritmo de trabalho:** o responsável por este repositório está usando o projeto para aprender. Vale seguir em passos pequenos, entendendo cada comando antes de aplicar.
