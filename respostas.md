@@ -149,3 +149,359 @@ Neste exemplo notamos que a rede RIP possui menos trafego, porém a medida que a
 Isso se da ao fato da rede OSPF ter uma frequencia menor para atualização topológica.
 
 ## Etapa 3
+
+### Q11. O network classful do RIP
+
+Em R-BORDA, o comando `network 10.0.0.0` sob `router rip` ativa o RIP em quais interfaces? Por que isso é um problema em um roteador de borda cujas interfaces estão todas dentro de 10.0.0.0/8, e o que exatamente o `passive-interface` contém?
+
+**Resposta:**
+
+```
+R-BORDA>show ip protocols
+Routing Protocol is "rip"
+Sending updates every 30 seconds, next due in 5 seconds
+Invalid after 180 seconds, hold down 180, flushed after 240
+Outgoing update filter list for all interfaces is not set
+Incoming update filter list for all interfaces is not set
+Redistributing: rip, ospf 1 
+Default version control: send version 2, receive 2
+  Interface             Send  Recv  Triggered RIP  Key-chain
+  Serial0/2/0           22
+Automatic network summarization is not in effect
+Maximum path: 4
+Routing for Networks:
+	10.0.0.0
+Passive Interface(s):
+	Serial0/3/0
+	Serial0/3/1
+Routing Information Sources:
+	Gateway         Distance      Last Update
+	10.1.2.174           120      00:00:18
+Distance: (default is 120)
+
+Routing Protocol is "ospf 1"
+  Outgoing update filter list for all interfaces is not set 
+  Incoming update filter list for all interfaces is not set 
+  Router ID 1.1.1.4
+  It is an autonomous system boundary router
+  Redistributing External Routes from,
+    rip 
+  Number of areas in this router is 1. 1 normal 0 stub 0 nssa
+  Maximum path: 4
+  Routing for Networks:
+    10.1.2.164 0.0.0.3 area 0
+    10.1.2.168 0.0.0.3 area 0
+  Passive Interface(s): 
+    Serial0/2/0
+  Routing Information Sources:  
+    Gateway         Distance      Last Update 
+    1.1.1.1              110      00:13:50
+    1.1.1.2              110      00:22:04
+    1.1.1.3              110      00:22:03
+    1.1.1.4              110      00:25:07
+  Distance: (default is 110)
+
+```
+
+---
+
+### Q12. A métrica-semente que faltou
+
+**Sintoma (metric 16):**
+
+```
+FIL-R1>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 5 subnets, 4 masks
+C       10.1.2.96/27 is directly connected, GigabitEthernet0/0
+L       10.1.2.97/32 is directly connected, GigabitEthernet0/0
+R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:14, Serial0/0/0
+C       10.1.2.176/30 is directly connected, Serial0/0/0
+L       10.1.2.177/32 is directly connected, Serial0/0/0
+```
+
+**Resultado correto (metric 3):**
+
+```
+FIL-R1>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
+R       10.1.2.0/26 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.64/27 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+C       10.1.2.96/27 is directly connected, GigabitEthernet0/0
+L       10.1.2.97/32 is directly connected, GigabitEthernet0/0
+R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:12, Serial0/0/0
+R       10.1.2.144/29 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.152/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.156/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.160/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.164/30 [120/1] via 10.1.2.173, 00:00:12, Serial0/0/1
+R       10.1.2.168/30 [120/1] via 10.1.2.173, 00:00:12, Serial0/0/1
+C       10.1.2.172/30 is directly connected, Serial0/0/1
+L       10.1.2.174/32 is directly connected, Serial0/0/1
+C       10.1.2.176/30 is directly connected, Serial0/0/0
+L       10.1.2.177/32 is directly connected, Serial0/0/0
+```
+
+**Explicação:**
+
+---
+
+### Q13. Rotas de segunda mão no OSPF
+
+```
+MTZ-R1>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
+O       10.1.2.0/26 [110/2] via 10.1.2.158, 02:46:21, GigabitEthernet0/2
+O       10.1.2.64/27 [110/2] via 10.1.2.154, 02:46:31, GigabitEthernet0/1
+O E2    10.1.2.96/27 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
+                     [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
+O E2    10.1.2.128/28 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
+C       10.1.2.144/29 is directly connected, GigabitEthernet0/0
+L       10.1.2.145/32 is directly connected, GigabitEthernet0/0
+C       10.1.2.152/30 is directly connected, GigabitEthernet0/1
+L       10.1.2.153/32 is directly connected, GigabitEthernet0/1
+C       10.1.2.156/30 is directly connected, GigabitEthernet0/2
+L       10.1.2.157/32 is directly connected, GigabitEthernet0/2
+O       10.1.2.160/30 [110/2] via 10.1.2.154, 02:46:21, GigabitEthernet0/1
+                      [110/2] via 10.1.2.158, 02:46:21, GigabitEthernet0/2
+O       10.1.2.164/30 [110/65] via 10.1.2.154, 01:28:45, GigabitEthernet0/1
+O       10.1.2.168/30 [110/65] via 10.1.2.158, 01:27:32, GigabitEthernet0/2
+O E2    10.1.2.172/30 [110/20] via 10.1.2.154, 00:57:19, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:57:19, GigabitEthernet0/2
+O E2    10.1.2.176/30 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
+```
+
+```
+MTZ-R3>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 16 subnets, 6 masks
+C       10.1.2.0/26 is directly connected, GigabitEthernet0/0
+L       10.1.2.1/32 is directly connected, GigabitEthernet0/0
+O       10.1.2.64/27 [110/2] via 10.1.2.161, 02:46:51, GigabitEthernet0/2
+O E2    10.1.2.96/27 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
+O E2    10.1.2.128/28 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
+O       10.1.2.144/29 [110/2] via 10.1.2.157, 02:46:51, GigabitEthernet0/1
+O       10.1.2.152/30 [110/2] via 10.1.2.157, 02:46:51, GigabitEthernet0/1
+                      [110/2] via 10.1.2.161, 02:46:51, GigabitEthernet0/2
+C       10.1.2.156/30 is directly connected, GigabitEthernet0/1
+L       10.1.2.158/32 is directly connected, GigabitEthernet0/1
+C       10.1.2.160/30 is directly connected, GigabitEthernet0/2
+L       10.1.2.162/32 is directly connected, GigabitEthernet0/2
+O       10.1.2.164/30 [110/65] via 10.1.2.161, 01:29:10, GigabitEthernet0/2
+C       10.1.2.168/30 is directly connected, Serial0/3/0
+L       10.1.2.169/32 is directly connected, Serial0/3/0
+O E2    10.1.2.172/30 [110/20] via 10.1.2.170, 00:57:44, Serial0/3/0
+O E2    10.1.2.176/30 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
+```
+
+**Explicação do código O E2 e da notação [110/20]:**
+
+---
+
+### Q14. Rotas de segunda mão no RIP
+
+```
+FIL-R1>show ip route rip
+     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
+R       10.1.2.0/26 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.64/27 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:04, Serial0/0/0
+R       10.1.2.144/29 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.152/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.156/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.160/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.164/30 [120/1] via 10.1.2.173, 00:00:01, Serial0/0/1
+R       10.1.2.168/30 [120/1] via 10.1.2.173, 00:00:01, Serial0/0/1
+```
+
+```
+FIL-R2>show ip route rip
+     10.0.0.0/8 is variably subnetted, 14 subnets, 6 masks
+R       10.1.2.0/26 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.64/27 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.96/27 [120/1] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.144/29 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.152/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.156/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.160/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.164/30 [120/2] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.168/30 [120/2] via 10.1.2.177, 00:00:10, Serial0/0/0
+R       10.1.2.172/30 [120/1] via 10.1.2.177, 00:00:10, Serial0/0/0
+```
+
+---
+
+### Q15. A jornada completa de um DISCOVER
+
+Captura: 
+
+**Dispositivos que o DISCOVER atravessa (em ordem):**
+
+**Caminho de volta do OFFER:**
+
+**Explicação do protocolo de roteamento usado em cada trecho:**
+
+---
+
+### Q16. Falha com rede viva
+
+**ECMP no R-BORDA:**
+
+```
+O       10.1.2.160/30 [110/65] via 10.1.2.165, 01:49:46, Serial0/3/0
+                      [110/65] via 10.1.2.169, 01:49:46, Serial0/3/1
+```
+
+**tracert 1 (antes do shutdown):**
+
+```
+Tracing route to 10.1.2.146 over a maximum of 30 hops: 
+
+  1   0 ms      0 ms      0 ms      10.1.2.129
+  2   0 ms      13 ms     0 ms      10.1.2.177
+  3   8 ms      1 ms      20 ms     10.1.2.173
+  4   15 ms     20 ms     6 ms      10.1.2.165
+  5   15 ms     18 ms     6 ms      10.1.2.153
+  6   5 ms      12 ms     1 ms      10.1.2.146
+```
+
+**tracert 2 (depois do shutdown):**
+
+```
+C:\>tracert 10.1.2.146
+
+Tracing route to 10.1.2.146 over a maximum of 30 hops: 
+
+  1   0 ms      0 ms      0 ms      10.1.2.129
+  2   1 ms      0 ms      0 ms      10.1.2.177
+  3   1 ms      19 ms     3 ms      10.1.2.173
+  4   2 ms      27 ms     8 ms      10.1.2.169
+  5   16 ms     13 ms     16 ms     10.1.2.157
+  6   12 ms     15 ms     13 ms     10.1.2.146
+
+Trace complete.
+```
+
+**ipconfig /renew com serial derrubada:**
+
+```
+C:\>ipconfig /renew
+
+   IP Address......................: 10.1.2.132
+   Subnet Mask.....................: 255.255.255.240
+   Default Gateway.................: 10.1.2.129
+   DNS Server......................: 0.0.0.0
+
+```
+
+**Explicação:**
+
+---
+
+### Q17. A fronteira não é simétrica
+
+```
+MTZ-R1>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
+O       10.1.2.0/26 [110/2] via 10.1.2.158, 03:22:27, GigabitEthernet0/2
+O       10.1.2.64/27 [110/2] via 10.1.2.154, 03:22:37, GigabitEthernet0/1
+O E2    10.1.2.96/27 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
+                     [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
+O E2    10.1.2.128/28 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
+C       10.1.2.144/29 is directly connected, GigabitEthernet0/0
+L       10.1.2.145/32 is directly connected, GigabitEthernet0/0
+C       10.1.2.152/30 is directly connected, GigabitEthernet0/1
+L       10.1.2.153/32 is directly connected, GigabitEthernet0/1
+C       10.1.2.156/30 is directly connected, GigabitEthernet0/2
+L       10.1.2.157/32 is directly connected, GigabitEthernet0/2
+O       10.1.2.160/30 [110/2] via 10.1.2.154, 03:22:27, GigabitEthernet0/1
+                      [110/2] via 10.1.2.158, 03:22:27, GigabitEthernet0/2
+O       10.1.2.164/30 [110/65] via 10.1.2.154, 00:00:42, GigabitEthernet0/1
+O       10.1.2.168/30 [110/65] via 10.1.2.158, 02:03:38, GigabitEthernet0/2
+O E2    10.1.2.172/30 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
+O E2    10.1.2.176/30 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
+                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
+```
+
+```
+FIL-R2>show ip route
+Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
+       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
+       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
+       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
+       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
+       * - candidate default, U - per-user static route, o - ODR
+       P - periodic downloaded static route
+
+Gateway of last resort is not set
+
+     10.0.0.0/8 is variably subnetted, 14 subnets, 6 masks
+R       10.1.2.0/26 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.64/27 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.96/27 [120/1] via 10.1.2.177, 00:00:20, Serial0/0/0
+C       10.1.2.128/28 is directly connected, GigabitEthernet0/0
+L       10.1.2.129/32 is directly connected, GigabitEthernet0/0
+R       10.1.2.144/29 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.152/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.156/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.160/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.164/30 [120/2] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.168/30 [120/2] via 10.1.2.177, 00:00:20, Serial0/0/0
+R       10.1.2.172/30 [120/1] via 10.1.2.177, 00:00:20, Serial0/0/0
+C       10.1.2.176/30 is directly connected, Serial0/0/0
+L       10.1.2.178/32 is directly connected, Serial0/0/0
+```
+
+**Explicação (redistribuição, network 10.0.0.0, passive-interface):**
