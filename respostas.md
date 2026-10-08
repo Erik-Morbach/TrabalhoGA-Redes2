@@ -48,85 +48,104 @@ OSPF, coluna Time.
 
 ## Etapa 2
 
-Q7. Os quatro relógios do RIP. Cole o show ip protocols de FIL-R1 e extraia os valores dos ti‐
+### Q7
+Os quatro relógios do RIP. Cole o show ip protocols de FIL-R1 e extraia os valores dos ti‐
 mers de update, invalid, holddown e flush. Explique em uma frase o papel de cada um e o
 que significa a linha "next update due in...".
 Onde procurar: CLI de FIL-R1, primeiro bloco da saída de show ip protocols.
-Q8. Por dentro de um Response. No modo Simulation, capture um RIP Response periódico
-de FIL-R1. Para qual endereço de destino ele é enviado, e por que RIPv2 usa multicast em
-vez do broadcast do RIPv1? Liste os campos presentes em cada entrada de rota do Respon‐
-se e diga qual deles é a razão de o RIPv2 suportar VLSM.
-Onde procurar: modo Simulation com filtro só em RIP. Outbound PDU Details do Response (destino
-224.0.0.9, procure o campo de máscara nas entradas). Se os PDU Details da sua versão não exibirem o
-campo de máscara nas entradas de rota, use como evidência o show ip route de FIL-R2, que mostra subredes de tamanhos diferentes convivendo dentro da mesma rede 10.0.0.0, e explique por que isso seria
-impossível com RIPv1.
-Q9. Métrica em saltos. Na tabela de FIL-R2, interprete a rota R para a LAN-FIL1: o que signifi‐
-ca [120/1]? Por que a métrica do RIP é contada em saltos, e qual a consequência prática do
-limite de 15?
-Onde procurar: show ip route rip em FIL-R2.
+---
+```
+FIL-R1#show ip protocols
+Routing Protocol is "rip"
+Sending updates every 30 seconds, next due in 27 seconds
+Invalid after 180 seconds, hold down 180, flushed after 240
+Outgoing update filter list for all interfaces is not set
+Incoming update filter list for all interfaces is not set
+Redistributing: rip
+Default version control: send version 2, receive 2
+Interface Send Recv Triggered RIP Key-chain
+Serial0/0/0 22
+Automatic network summarization is not in effect
+Maximum path: 4
+Routing for Networks:
+10.0.0.0
+Passive Interface(s):
+GigabitEthernet0/0
+Routing Information Sources:
+Gateway Distance Last Update
+10.1.2.178 120 00:00:17
+Distance: (default is 120)
+```
+| Nome | tempo |
+|--|--|
+| update | 30 segundos
+| invalid | 180 segundos
+| holddown | 180 segundos
+| flush | 240 segundos
 
-Q10. Tagarelice comparada. Com as duas redes estáveis (sem qualquer mudança), compa‐
-re o que RIP e OSPF continuam transmitindo periodicamente: o quê, com que frequência e
-de que tamanho? Use os tamanhos reais dos pacotes observados para estimar quantos by‐
-tes por minuto cada protocolo gasta em um enlace parado, e conclua qual dos dois cresce
-quando a rede ganha novas sub-redes. Atenção: com o número pequeno de rotas desta to‐
-pologia os dois valores medidos ficam próximos, e podem até inverter. A conclusão pedida
-é sobre o comportamento de cada protocolo à medida que a tabela de rotas cresce, não so‐
-bre qual número é maior nesta medição.
-Onde procurar: modo Simulation, uma rodada com filtro OSPF (na matriz) e outra com filtro RIP (na
-filial). O tamanho do pacote aparece nos PDU Details e a periodicidade, na coluna Time.
+O valor de "update" é a frequência com que o roteador vai mandar a sua tabela de distâncias. 
+
+O valor de "invalid" referente ao tempo em que uma rota pode ficar sem receber updates e ainda ser considerada valida. Depois de "invalid" segundos sem receber nenhum update da rota ela se torna invalida.
+
+O valor de "holddown" é um threshold para atualizações que pioram a tabela atual, de forma a evitar mudança excessiva na tabela.
+
+O valor de "flush" é o limite para a rota ser removida da tabela (só é contado a partir do momento que a rota se torna invalida)
+
+A frase "next due in 27 seconds" é a contagem de segundos que faltam para o próximo update ser enviado para os a rede.
+
+### Q8
+Por dentro de um Response. No modo Simulation, capture um RIP Response periódico de FIL-R1. Para qual endereço de destino ele é enviado, e por que RIPv2 usa multicast em vez do broadcast do RIPv1? Liste os campos presentes em cada entrada de rota do Response e diga qual deles é a razão de o RIPv2 suportar VLSM.
+Onde procurar: modo Simulation com filtro só em RIP. Outbound PDU Details do Response (destino 224.0.0.9, procure o campo de máscara nas entradas). Se os PDU Details da sua versão não exibirem o campo de máscara nas entradas de rota, use como evidência o show ip route de FIL-R2, que mostra subredes de tamanhos diferentes convivendo dentro da mesma rede 10.0.0.0, e explique por que isso seria impossível com RIPv1.
+---
+
+O endereço de destino é o 224.0.0.9 (multicast), o multicast é utilizado para evitar enviar os pacotes RIPv2 para dispositivos que não estão participando do protocolo, diferente do RIPv1 que usa o broadcast padrão 255.255.255.255.
+
+Os campos presentes são: (seguindo o q8_rip_response.png)
+- ADDRESS FAMILY: 2
+- ROUTE TAG: 0
+- NETWORK ADDRESS: 10.1.2.96
+- SUBNET MASK: 255.255.255.224
+- NEXT HOP: 10.1.2.177
+- METRIC: 1
+
+O campo que permite a utilização de VLSM é o SUBNET MASK em conjunto com o NETWORK ADDRESS.
+Como o RIPv1 não envia a mascara da subrede, o roteador que recebe o rip response precisa supor uma mascara para colocar em sua tabela de roteamento, podendo causar conflitos e inconsistencia.
+
+
+### Q9
+Métrica em saltos. Na tabela de FIL-R2, interprete a rota R para a LAN-FIL1: o que significa [120/1]? Por que a métrica do RIP é contada em saltos, e qual a consequência prática do limite de 15?
+Onde procurar: show ip route rip em FIL-R2.
+--- 
+
+```
+Gateway of last resort is not set
+
+10.0.0.0/8 is variably subnetted, 5 subnets, 4 masks
+R 10.1.2.96/27 [120/1] via 10.1.2.177, 00:00:09, Serial0/0/0
+C 10.1.2.128/28 is directly connected, GigabitEthernet0/0
+L 10.1.2.129/32 is directly connected, GigabitEthernet0/0
+C 10.1.2.176/30 is directly connected, Serial0/0/0
+L 10.1.2.178/32 is directly connected, Serial0/0/0
+```
+
+A primeira mensagem é referente a não ter sido configurado uma saída padrão para o roteador, caso o ip que queremos nos comunicar não esteja presente em alguma das redes alcançaveis, a saída padrão seria usada.
+A Rota R para 10.1.2.96/27 é uma rota RIP, as rotas L e C são local e connected respectivamente.
+
+A métrica 120/1 é no formato [distância administrativa/hop], a distância administrativa padrão é 120, e o número de roteadores entre o FIL-R2 e a rede 10.1.2.96/27 é 1.
+
+A consequência prática de um limite de hops em 15 é que em casos de uma rota cair e ser atualizada de forma incorreta pela falta de conhecimento topolgócio sobre a rede nos roteadores, a rota será removida da tabela quando atingir a métrica 16.
+
+### Q10
+Tagarelice comparada. Com as duas redes estáveis (sem qualquer mudança), compare o que RIP e OSPF continuam transmitindo periodicamente: o quê, com que frequência e de que tamanho? Use os tamanhos reais dos pacotes observados para estimar quantos bytes por minuto cada protocolo gasta em um enlace parado, e conclua qual dos dois cresce quando a rede ganha novas sub-redes. Atenção: com o número pequeno de rotas desta topologia os dois valores medidos ficam próximos, e podem até inverter. A conclusão pedida é sobre o comportamento de cada protocolo à medida que a tabela de rotas cresce, não sobre qual número é maior nesta medição.
+Onde procurar: modo Simulation, uma rodada com filtro OSPF (na matriz) e outra com filtro RIP (nafilial). O tamanho do pacote aparece nos PDU Details e a periodicidade, na coluna Time.
+---
+
+A rede RIP esta configurada com update=30, logo cada roteador envia 2 rip responses por minuto (como pode ser visto em q10_rip_periodico), onde cada um possui tamanho 52 bytes
+
+A rede OSPF esta configurada para um HELLO a cada 10 segundos, logo cada enlace recebera 12 pacotes HELLO que possuem o tamanho de 20 bytes. 
+
+Neste exemplo notamos que a rede RIP possui menos trafego, porém a medida que a quantidade de sub redes aumenta, os pacotes se tornam maiores e a frequencia de 30 supera o trafego normal da rede OSPF. 
+
+Isso se da ao fato da rede OSPF ter uma frequencia menor para atualização topológica.
 
 ## Etapa 3
-
-Q11. O network classful do RIP. Em R-BORDA, o comando network 10.0.0.0 sob router rip
-ativa o RIP em quais interfaces? Por que isso é um problema em um roteador de borda cu‐
-jas interfaces estão todas dentro de 10.0.0.0/8, e o que exatamente o passive-interface
-contém, ou seja, o que ele deixa de enviar e o que continua valendo? Cole a evidência de que
-os updates RIP saem apenas pela interface correta.
-Onde procurar: show ip protocols em R-BORDA: o bloco do RIP lista as interfaces em que ele está ativo e
-as interfaces passivas.
-Q12. A métrica-semente que faltou. Configure primeiro redistribute ospf 1 metric 16 no
-router rip de R-BORDA. As rotas da matriz aparecem em FIL-R1? Documente o sintoma
-(show ip route antes), explique a causa, ou seja, o que a métrica 16 significa para o RIP, e
-corrija com metric 3, documentando o resultado (show ip route depois). Explique também
-por que omitir o parâmetro metric produziria o mesmo efeito em um roteador Cisco real.
-Onde procurar: show ip route em FIL-R1 antes e depois. O bloco Redistributing do show ip protocols em
-R-BORDA confirma que a redistribuição está ativa nos dois casos, o que isola a métrica como causa
-do sintoma.
-Q13. Rotas de segunda mão no OSPF. Como as redes da filial aparecem na tabela de MTZR1? Explique o código da rota e a notação [110/20]: de onde vem o 20, o que significa o "E2"
-e, comparando a mesma rota em MTZ-R1 e MTZ-R3, o que acontece (ou não acontece) com
-essa métrica ao longo do caminho?
-Onde procurar: show ip route em MTZ-R1 e MTZ-R3 (rotas O E2).
-Q14. Rotas de segunda mão no RIP. Como a LAN-SRV aparece na tabela de FIL-R2? Decom‐
-ponha a métrica observada em (métrica-semente + saltos dentro do domínio RIP). O que
-aconteceria com essa rota se houvesse mais 13 roteadores em cadeia na filial?
-Onde procurar: show ip route rip em FIL-R2, comparado com o de FIL-R1.
-
-Q15. A jornada completa de um DISCOVER. Converta PC-FIL2-1 para DHCP e capture a ob‐
-tenção de endereço no modo Simulation. Liste, em ordem, todos os dispositivos que o DIS‐
-COVER (e sua versão encaminhada) atravessa até o SRV-DC, e o caminho de volta do OF‐
-FER. Em cada trecho, diga qual protocolo de roteamento aprendeu a rota que está sendo
-usada, e responda: o roteador encaminha o pacote consultando o protocolo ou a tabela de
-rotas? Quantos roteadores separam o cliente do servidor DHCP, e por que isso não impede
-o serviço?
-Onde procurar: Event List (coluna At Device) com filtro DHCP. Use show ip route nos roteadores do cami‐
-nho para classificar cada rota (R, O, O E2, C).
-Q16. Falha com rede viva. Em R-BORDA, cole o trecho do show ip route que mostra duas ro‐
-tas de custo igual para a LAN-SRV e explique por que elas existem. Faça o tracert de PCFIL2-1 ao SRV-DC e identifique na saída por qual das duas seriais de R-BORDA o caminho
-saiu. Derrube essa serial com shutdown, repita o tracert e cole os dois resultados. O cami‐
-nho migrou para a outra serial, como esperado? Explique por que derrubar a serial que não
-aparecia no primeiro tracert não produziria nenhuma mudança visível, embora as duas rotas
-estejam na tabela. Com a serial ainda derrubada, execute ipconfig /renew em PC-FIL2-1 e
-cole o resultado: o PC continua obtendo endereço? Explique por qual caminho o DISCOVER
-e o OFFER trafegaram desta vez, e por que um serviço de DHCP centralizado a cinco rotea‐
-dores de distância sobreviveu à falha de um enlace.
-Onde procurar: show ip route em R-BORDA (duas linhas "via ..." sob o mesmo prefixo). O Command
-Prompt do PC serve para os dois tracert e para o ipconfig /renew após a falha.
-Q17. A fronteira não é simétrica. Na tabela de MTZ-R1, o enlace /30 entre R-BORDA e FIL-R1
-não aparece. Na tabela de FIL-R2, os enlaces /30 entre R-BORDA e a matriz aparecem, e
-com métrica menor do que as LANs da matriz. Explique as duas observações usando
-três mecanismos distintos: o que a redistribuição carrega da tabela de rotas, o que o
-comando network 10.0.0.0 coloca dentro do processo RIP, e o que exatamente o passiveinterface suprime.
-Onde procurar: show ip route em MTZ-R1 e em FIL-R2. Em R-BORDA, compare o show ip route,
-observando o código C dos três /30, com o bloco do RIP em show ip protocols, que lista as interfaces
-ativas e as passivas.
