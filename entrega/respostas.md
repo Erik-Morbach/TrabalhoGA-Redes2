@@ -1,6 +1,6 @@
 # Respostas: Trabalho do Grau A (Redes)
 
-**Integrantes:** Erik Cruz Morbach, Lucas Hoffmeister Escopelli, Vinicius Muller Silveira
+**Integrantes:** Erik Cruz Morbach(1946271), Lucas Hoffmeister Escopelli(), Vinicius Muller Silveira(1789484)
 
 **/24 do grupo:** 10.1.2.0/24
 
