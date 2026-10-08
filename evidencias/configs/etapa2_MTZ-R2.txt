@@ -1,0 +1,105 @@
+MTZ-R2#show running-config
+Building configuration...
+
+Current configuration : 1106 bytes
+!
+version 15.1
+no service timestamps log datetime msec
+no service timestamps debug datetime msec
+no service password-encryption
+!
+hostname MTZ-R2
+!
+!
+!
+!
+!
+!
+!
+!
+no ip cef
+no ipv6 cef
+!
+!
+!
+!
+license udi pid CISCO2911/K9 sn FTX1524E86D-
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+!
+spanning-tree mode pvst
+!
+!
+!
+!
+!
+!
+interface GigabitEthernet0/0
+ ip address 10.1.2.65 255.255.255.224
+ ip helper-address 10.1.2.146
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/1
+ ip address 10.1.2.154 255.255.255.252
+ duplex auto
+ speed auto
+!
+interface GigabitEthernet0/2
+ ip address 10.1.2.161 255.255.255.252
+ duplex auto
+ speed auto
+!
+interface Serial0/3/0
+ no ip address
+ clock rate 2000000
+ shutdown
+!
+interface Serial0/3/1
+ no ip address
+ clock rate 2000000
+ shutdown
+!
+interface Vlan1
+ no ip address
+ shutdown
+!
+router ospf 1
+ router-id 1.1.1.2
+ log-adjacency-changes
+ passive-interface GigabitEthernet0/0
+ network 10.1.2.64 0.0.0.31 area 0
+ network 10.1.2.152 0.0.0.3 area 0
+ network 10.1.2.160 0.0.0.3 area 0
+!
+ip classless
+!
+ip flow-export version 9
+!
+!
+!
+!
+!
+!
+!
+line con 0
+!
+line aux 0
+!
+line vty 0 4
+ login
+!
+!
+!
+end
+
