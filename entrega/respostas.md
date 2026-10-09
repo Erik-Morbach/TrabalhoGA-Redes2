@@ -1,6 +1,6 @@
 # Respostas: Trabalho do Grau A (Redes)
 
-**Integrantes:** Erik Cruz Morbach(1946271), Lucas Hoffmeister Escopelli(), Vinicius Muller Silveira(1789484)
+**Integrantes:** Erik Cruz Morbach(1946271), Lucas Hoffmeister Escopelli(1916768), Vinicius Muller Silveira(1789484)
 
 **/24 do grupo:** 10.1.2.0/24
 
@@ -264,356 +264,102 @@ Isso se da ao fato da rede OSPF ter uma frequencia menor para atualização topo
 
 ### Q11. O network classful do RIP
 
-Em R-BORDA, o comando `network 10.0.0.0` sob `router rip` ativa o RIP em quais interfaces? Por que isso é um problema em um roteador de borda cujas interfaces estão todas dentro de 10.0.0.0/8, e o que exatamente o `passive-interface` contém?
+O RIP trabalha com o conceito de classes de endereços, não com prefixos exatos. O comando `network 10.0.0.0` não significa "ative o RIP somente nesta sub-rede /8": significa "ative o RIP em todas as interfaces cujo endereço IP pertence à classe A 10.0.0.0/8". No R-BORDA, todas as interfaces com IP têm endereços dentro de 10.0.0.0/8 (ENL4 = 10.1.2.166/30, ENL5 = 10.1.2.170/30 e ENL6 = 10.1.2.173/30), portanto o `network 10.0.0.0` as ativa todas para o RIP.
 
-**Resposta:**
+O problema é que as interfaces ENL4 e ENL5 (seriais s0/3/0 e s0/3/1) conectam o R-BORDA à matriz OSPF. Se o RIP ficasse ativo nessas interfaces, o R-BORDA tentaria enviar e receber RIP Updates nesses enlaces — trocando tabelas de roteamento com MTZ-R2 e MTZ-R3, que não executam RIP e ignorariam os pacotes. Além disso, roteadores que falam apenas OSPF na matriz não esperariam receber mensagens RIP, o que seria tráfego desnecessário e potencialmente confuso. O comportamento correto é que ENL4 e ENL5 sirvam somente para o OSPF (configurado explicitamente com `network 10.1.2.164 0.0.0.3 area 0` e `network 10.1.2.168 0.0.0.3 area 0`), enquanto ENL6 (serial s0/2/0, que liga ao FIL-R1) é o único enlace onde o RIP deve de fato enviar e receber Updates.
 
-```
-R-BORDA>show ip protocols
-Routing Protocol is "rip"
-Sending updates every 30 seconds, next due in 5 seconds
-Invalid after 180 seconds, hold down 180, flushed after 240
-Outgoing update filter list for all interfaces is not set
-Incoming update filter list for all interfaces is not set
-Redistributing: rip, ospf 1 
-Default version control: send version 2, receive 2
-  Interface             Send  Recv  Triggered RIP  Key-chain
-  Serial0/2/0           22
-Automatic network summarization is not in effect
-Maximum path: 4
-Routing for Networks:
-	10.0.0.0
-Passive Interface(s):
-	Serial0/3/0
-	Serial0/3/1
-Routing Information Sources:
-	Gateway         Distance      Last Update
-	10.1.2.174           120      00:00:18
-Distance: (default is 120)
+O `passive-interface` resolve exatamente esse problema. Quando uma interface é declarada passiva no RIP, o roteador para de enviar RIP Updates por ela — ele continua incluindo as redes dessa interface em suas mensagens e recebendo Updates chegando por ela, mas não envia Updates ativos. No R-BORDA, `passive-interface Serial0/3/0` e `passive-interface Serial0/3/1` silenciam o RIP nas duas seriais que conectam à matriz. Assim ENL4 e ENL5 deixam de receber tráfego RIP do R-BORDA, e apenas a ENL6 (s0/2/0, que leva ao FIL-R1) continua enviando Updates RIP — que é o comportamento desejado.
 
-Routing Protocol is "ospf 1"
-  Outgoing update filter list for all interfaces is not set 
-  Incoming update filter list for all interfaces is not set 
-  Router ID 1.1.1.4
-  It is an autonomous system boundary router
-  Redistributing External Routes from,
-    rip 
-  Number of areas in this router is 1. 1 normal 0 stub 0 nssa
-  Maximum path: 4
-  Routing for Networks:
-    10.1.2.164 0.0.0.3 area 0
-    10.1.2.168 0.0.0.3 area 0
-  Passive Interface(s): 
-    Serial0/2/0
-  Routing Information Sources:  
-    Gateway         Distance      Last Update 
-    1.1.1.1              110      00:13:50
-    1.1.1.2              110      00:22:04
-    1.1.1.3              110      00:22:03
-    1.1.1.4              110      00:25:07
-  Distance: (default is 110)
-
-```
+Do lado do OSPF, a lógica é inversa: a s0/2/0 é declarada `passive-interface` no processo OSPF para que o R-BORDA não tente formar adjacência OSPF com o FIL-R1 (que não fala OSPF). O R-BORDA é, portanto, um Autonomous System Boundary Router (ASBR): fala OSPF com a matriz pelas seriais ENL4 e ENL5, e RIP com a filial pela serial ENL6, com cada protocolo bloqueado nas interfaces do outro domínio via `passive-interface`.
 
 ---
 
 ### Q12. A métrica-semente que faltou
 
-**Sintoma (metric 16):**
+Quando dois protocolos de roteamento coexistem e um roteador precisa anunciar rotas de um domínio para o outro, é preciso atribuir uma métrica inicial às rotas redistribuídas — a chamada **métrica-semente**. Sem ela, o protocolo receptor não sabe qual custo atribuir às rotas importadas e as descarta ou as trata como inacessíveis.
 
-```
-FIL-R1>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
+No RIP, a inacessibilidade é representada pela métrica **16** (infinito). Na primeira tabela exibida, o FIL-R1 não tem as rotas da matriz: as únicas entradas são as redes diretamente conectadas e a LAN-FIL2 (10.1.2.128/28) aprendida do FIL-R2 via RIP com métrica 1. Isso significa que, naquele momento, a redistribuição `redistribute ospf 1` estava configurada no R-BORDA **sem** a palavra-chave `metric 3`. O RIPv2 usa métrica padrão infinita (16) para rotas redistribuídas sem métrica explícita, e rotas com métrica 16 são descartadas como inalcançáveis pelos vizinhos — por isso o FIL-R1 simplesmente não as aprende.
 
-Gateway of last resort is not set
+Depois de adicionar `metric 3` ao comando (`redistribute ospf 1 metric 3`), o R-BORDA passa a injetar cada rota da matriz no RIP com métrica inicial 3. O valor 3 foi escolhido para representar, de forma aproximada, a distância do R-BORDA até as redes internas da matriz: o R-BORDA já está a 1 ou 2 saltos das LANs e enlances da matriz via OSPF, e a métrica-semente de 3 resulta em métricas finais coerentes para o FIL-R1 (3 saltos até redes como LAN-ENG ou LAN-ADM, já que estão "atrás" do R-BORDA) e para o FIL-R2 (4 saltos, que é FIL-R1 + 1).
 
-     10.0.0.0/8 is variably subnetted, 5 subnets, 4 masks
-C       10.1.2.96/27 is directly connected, GigabitEthernet0/0
-L       10.1.2.97/32 is directly connected, GigabitEthernet0/0
-R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:14, Serial0/0/0
-C       10.1.2.176/30 is directly connected, Serial0/0/0
-L       10.1.2.177/32 is directly connected, Serial0/0/0
-```
-
-**Resultado correto (metric 3):**
-
-```
-FIL-R1>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
-
-Gateway of last resort is not set
-
-     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
-R       10.1.2.0/26 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.64/27 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-C       10.1.2.96/27 is directly connected, GigabitEthernet0/0
-L       10.1.2.97/32 is directly connected, GigabitEthernet0/0
-R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:12, Serial0/0/0
-R       10.1.2.144/29 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.152/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.156/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.160/30 [120/3] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.164/30 [120/1] via 10.1.2.173, 00:00:12, Serial0/0/1
-R       10.1.2.168/30 [120/1] via 10.1.2.173, 00:00:12, Serial0/0/1
-C       10.1.2.172/30 is directly connected, Serial0/0/1
-L       10.1.2.174/32 is directly connected, Serial0/0/1
-C       10.1.2.176/30 is directly connected, Serial0/0/0
-L       10.1.2.177/32 is directly connected, Serial0/0/0
-```
-
-**Explicação:**
+Na segunda tabela, o FIL-R1 passa a ver todas as redes da matriz com métrica [120/3] via 10.1.2.173 (R-BORDA, pelo ENL6), e o FIL-R2 (que aparece na Q14) as vê com [120/4] via 10.1.2.177 (FIL-R1, pelo ENL7). As redes ENL4 (10.1.2.164/30) e ENL5 (10.1.2.168/30) aparecem com [120/1], porque são as próprias seriais do R-BORDA que fazem fronteira — estão a 1 salto do FIL-R1.
 
 ---
 
 ### Q13. Rotas de segunda mão no OSPF
 
-```
-MTZ-R1>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
+O OSPF distingue dois tipos de rotas externas ao domínio: **E1** e **E2**. No contexto deste trabalho, as rotas das LANs da filial (LAN-FIL1 = 10.1.2.96/27, LAN-FIL2 = 10.1.2.128/28) e das seriais da filial (ENL6 = 10.1.2.172/30, ENL7 = 10.1.2.176/30) foram redistribuídas do RIP para o OSPF no R-BORDA via `redistribute rip subnets`. Por padrão, rotas redistribuídas no OSPF recebem o tipo **E2**, e é por isso que a tabela de MTZ-R1 e MTZ-R3 exibe o código `O E2` para essas redes.
 
-Gateway of last resort is not set
+**O que significa `O E2`.** O `O` indica que a rota foi aprendida por OSPF. O `E2` (External Type 2) significa que a métrica exibida é a **métrica-semente fixada no ponto de redistribuição** — no caso, 20, que é o valor padrão quando o OSPF redistribui rotas externas sem `metric` explícito — e essa métrica **não muda** à medida que o pacote atravessa roteadores OSPF internos. Independentemente de o MTZ-R1 estar a 1 ou a 10 saltos do R-BORDA, a métrica reportada continua 20. O tipo E1 somaria ao custo externo o custo interno acumulado dentro do OSPF, o que não é o caso aqui.
 
-     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
-O       10.1.2.0/26 [110/2] via 10.1.2.158, 02:46:21, GigabitEthernet0/2
-O       10.1.2.64/27 [110/2] via 10.1.2.154, 02:46:31, GigabitEthernet0/1
-O E2    10.1.2.96/27 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
-                     [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
-O E2    10.1.2.128/28 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
-C       10.1.2.144/29 is directly connected, GigabitEthernet0/0
-L       10.1.2.145/32 is directly connected, GigabitEthernet0/0
-C       10.1.2.152/30 is directly connected, GigabitEthernet0/1
-L       10.1.2.153/32 is directly connected, GigabitEthernet0/1
-C       10.1.2.156/30 is directly connected, GigabitEthernet0/2
-L       10.1.2.157/32 is directly connected, GigabitEthernet0/2
-O       10.1.2.160/30 [110/2] via 10.1.2.154, 02:46:21, GigabitEthernet0/1
-                      [110/2] via 10.1.2.158, 02:46:21, GigabitEthernet0/2
-O       10.1.2.164/30 [110/65] via 10.1.2.154, 01:28:45, GigabitEthernet0/1
-O       10.1.2.168/30 [110/65] via 10.1.2.158, 01:27:32, GigabitEthernet0/2
-O E2    10.1.2.172/30 [110/20] via 10.1.2.154, 00:57:19, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:57:19, GigabitEthernet0/2
-O E2    10.1.2.176/30 [110/20] via 10.1.2.154, 00:38:46, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:38:46, GigabitEthernet0/2
-```
+**A notação [110/20].** Os dois números têm o mesmo significado de sempre: `110` é a distância administrativa do OSPF, e `20` é a métrica OSPF da rota. Para rotas E2, essa métrica é a métrica-semente da redistribuição. O valor 20 é o padrão adotado pelo Cisco IOS para redistribuição no OSPF quando nenhuma métrica é especificada no comando `redistribute`.
 
-```
-MTZ-R3>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
+**Por que as rotas internas da filial aparecem em todos os roteadores OSPF da matriz.** O R-BORDA é um ASBR (Autonomous System Boundary Router): ao redistribuir do RIP para o OSPF, ele gera LSAs do tipo 5 (AS External LSA), que são propagados por toda a área 0 sem restrição. Assim, MTZ-R1, MTZ-R2 e MTZ-R3 todos aprendem as redes da filial como rotas E2, com métrica 20, e alcançam o R-BORDA pelo caminho de menor custo OSPF disponível — daí o ECMP visto em MTZ-R1 (dois next-hops iguais para as redes externas: 10.1.2.154 via g0/1 e 10.1.2.158 via g0/2, ambas chegando ao R-BORDA por caminhos de mesmo custo).
 
-Gateway of last resort is not set
-
-     10.0.0.0/8 is variably subnetted, 16 subnets, 6 masks
-C       10.1.2.0/26 is directly connected, GigabitEthernet0/0
-L       10.1.2.1/32 is directly connected, GigabitEthernet0/0
-O       10.1.2.64/27 [110/2] via 10.1.2.161, 02:46:51, GigabitEthernet0/2
-O E2    10.1.2.96/27 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
-O E2    10.1.2.128/28 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
-O       10.1.2.144/29 [110/2] via 10.1.2.157, 02:46:51, GigabitEthernet0/1
-O       10.1.2.152/30 [110/2] via 10.1.2.157, 02:46:51, GigabitEthernet0/1
-                      [110/2] via 10.1.2.161, 02:46:51, GigabitEthernet0/2
-C       10.1.2.156/30 is directly connected, GigabitEthernet0/1
-L       10.1.2.158/32 is directly connected, GigabitEthernet0/1
-C       10.1.2.160/30 is directly connected, GigabitEthernet0/2
-L       10.1.2.162/32 is directly connected, GigabitEthernet0/2
-O       10.1.2.164/30 [110/65] via 10.1.2.161, 01:29:10, GigabitEthernet0/2
-C       10.1.2.168/30 is directly connected, Serial0/3/0
-L       10.1.2.169/32 is directly connected, Serial0/3/0
-O E2    10.1.2.172/30 [110/20] via 10.1.2.170, 00:57:44, Serial0/3/0
-O E2    10.1.2.176/30 [110/20] via 10.1.2.170, 00:39:11, Serial0/3/0
-```
-
-**Explicação do código O E2 e da notação [110/20]:**
+**As rotas internas da matriz no MTZ-R3 (`O` sem `E2`).** As rotas marcadas apenas com `O` (como LAN-ENG 10.1.2.64/27 e ENL1 10.1.2.152/30) são rotas OSPF internas, aprendidas por LSAs tipo 1 e 2 dentro da própria área 0 — sem redistribuição. Essas têm custo real calculado pelo SPF e são mais confiáveis para o roteador do que as externas E2.
 
 ---
 
 ### Q14. Rotas de segunda mão no RIP
 
-```
-FIL-R1>show ip route rip
-     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
-R       10.1.2.0/26 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.64/27 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.128/28 [120/1] via 10.1.2.178, 00:00:04, Serial0/0/0
-R       10.1.2.144/29 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.152/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.156/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.160/30 [120/3] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.164/30 [120/1] via 10.1.2.173, 00:00:01, Serial0/0/1
-R       10.1.2.168/30 [120/1] via 10.1.2.173, 00:00:01, Serial0/0/1
-```
+A Q14 mostra o outro lado da redistribuição: as rotas da matriz OSPF vistas pelos roteadores da filial via RIP.
 
-```
-FIL-R2>show ip route rip
-     10.0.0.0/8 is variably subnetted, 14 subnets, 6 masks
-R       10.1.2.0/26 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.64/27 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.96/27 [120/1] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.144/29 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.152/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.156/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.160/30 [120/4] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.164/30 [120/2] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.168/30 [120/2] via 10.1.2.177, 00:00:10, Serial0/0/0
-R       10.1.2.172/30 [120/1] via 10.1.2.177, 00:00:10, Serial0/0/0
-```
+**No FIL-R1.** Todas as rotas da matriz aparecem com distância administrativa 120 (padrão do RIP) e métricas RIP que partem de 3. A métrica 3 vem da métrica-semente configurada no R-BORDA (`redistribute ospf 1 metric 3`). As redes do interior da matriz — LAN-ADM (10.1.2.0/26), LAN-ENG (10.1.2.64/27), LAN-SRV (10.1.2.144/29) e os enlaces do triângulo ENL1, ENL2, ENL3 (10.1.2.152–10.1.2.160/30) — chegam com [120/3], indicando 3 saltos RIP a partir do R-BORDA. Os enlaces ENL4 e ENL5 (10.1.2.164/30 e 10.1.2.168/30), que são as próprias interfaces seriais do R-BORDA que conectam à matriz, chegam com [120/1] — porque essas redes estão diretamente conectadas ao R-BORDA, que as anuncia ao FIL-R1 com apenas 1 salto adicionado à métrica inicial de 0 (elas não são redistribuídas do OSPF, são diretamente conectadas ao próprio R-BORDA e aprendidas nativamente pelo RIP via `network 10.0.0.0`).
+
+**No FIL-R2.** O FIL-R2 aprende tudo a partir do FIL-R1: cada rota ganha +1 em relação ao que o FIL-R1 enxerga. As redes internas da matriz que chegavam ao FIL-R1 com métrica 3 chegam ao FIL-R2 com métrica 4 ([120/4] via 10.1.2.177, que é o FIL-R1 no ENL7). As redes ENL4 e ENL5, que chegavam ao FIL-R1 com métrica 1, chegam ao FIL-R2 com métrica 2. A LAN-FIL1 (10.1.2.96/27), que é diretamente conectada ao FIL-R1, chega ao FIL-R2 com [120/1]. O ENL6 (10.1.2.172/30, entre R-BORDA e FIL-R1) aparece no FIL-R2 com [120/1] porque o FIL-R1 o anuncia como rede diretamente conectada; já no FIL-R1 essa rede é `C` (connected) e não aparece como rota RIP.
+
+**Assimetria importante.** O FIL-R1 não tem rota para a LAN-FIL2 (10.1.2.128/28) com via 10.1.2.173 (R-BORDA) — essa rede chega a ele via FIL-R2 ([120/1] via 10.1.2.178). Da mesma forma, o FIL-R2 não tem a LAN-FIL1 (10.1.2.96/27) via R-BORDA, mas sim via FIL-R1. Isso mostra que o RIP propagou corretamente as rotas das LANs das filiais entre si pelos ENL7.
 
 ---
 
 ### Q15. A jornada completa de um DISCOVER
 
-Captura: 
+Com a integração da Etapa 3, o PC-FIL2-1 (LAN-FIL2, 10.1.2.128/28) está em DHCP e o servidor centralizado SRV-DC (10.1.2.146) está na LAN-SRV (10.1.2.144/29) na matriz. O DISCOVER precisa atravessar dois domínios de roteamento distintos — RIP na filial e OSPF na matriz — para chegar ao servidor. Evidências: `evidencias/prints/q15_discover_jornada.png` e `evidencias/prints/q15_offer_retorno.png`.
 
 **Dispositivos que o DISCOVER atravessa (em ordem):**
 
+1. **PC-FIL2-1** emite o DISCOVER como broadcast (0.0.0.0 → 255.255.255.255, MAC FFFF.FFFF.FFFF) na LAN-FIL2.
+2. **FIL-R2** recebe o broadcast na g0/0 (10.1.2.129). Por ter `ip helper-address 10.1.2.146` nessa interface, captura o pacote DHCP, preenche o campo GIADDR com 10.1.2.129 (IP da g0/0 na LAN-FIL2) e o reenvia como unicast em direção ao SRV-DC (10.1.2.146). O próximo salto para 10.1.2.146 na tabela do FIL-R2 é 10.1.2.177 (FIL-R1, via Serial0/0/0, ENL7) — rota aprendida via RIP.
+3. **FIL-R1** recebe o pacote unicast na Serial0/0/0. Consulta sua tabela de rotas: 10.1.2.146 pertence à rede 10.1.2.144/29, que o FIL-R1 conhece via RIP com próximo salto 10.1.2.173 (R-BORDA, via Serial0/0/1, ENL6). Encaminha o pacote.
+4. **R-BORDA** recebe o pacote na Serial0/2/0. Consulta sua tabela de rotas: 10.1.2.144/29 é uma rota OSPF (aprendida via os enlaces ENL4 ou ENL5), com próximo salto para a matriz. O R-BORDA encaminha pelo ENL4 ou ENL5 (seriais para MTZ-R2 ou MTZ-R3 respectivamente, que possuem custo igual — ECMP possível).
+5. **MTZ-R2** (ou MTZ-R3) recebe o pacote e o encaminha para **MTZ-R1**, que tem a LAN-SRV como rede diretamente conectada (g0/0).
+6. **MTZ-R1** entrega o pacote ao **SRV-DC** (10.1.2.146) na LAN-SRV.
+
 **Caminho de volta do OFFER:**
 
-**Explicação do protocolo de roteamento usado em cada trecho:**
+O SRV-DC envia o OFFER em unicast para o GIADDR (10.1.2.129 — o FIL-R2). O caminho é o inverso: SRV-DC → MTZ-R1 → (MTZ-R2 ou MTZ-R3) → R-BORDA → FIL-R1 → FIL-R2. O FIL-R2, ao receber o OFFER destinado ao GIADDR 10.1.2.129 (sua própria interface), o retransmite em broadcast para a LAN-FIL2, onde o PC-FIL2-1 aguarda.
+
+**Protocolo de roteamento usado em cada trecho:**
+
+- **FIL-R2 → FIL-R1 (ENL7):** RIP. O FIL-R2 aprendeu a rota para 10.1.2.144/29 com métrica [120/4] via FIL-R1 (rota redistribuída da matriz via RIP).
+- **FIL-R1 → R-BORDA (ENL6):** RIP. O FIL-R1 aprendeu 10.1.2.144/29 com [120/3] via R-BORDA (10.1.2.173).
+- **R-BORDA → MTZ-R2 ou MTZ-R3 (ENL4 ou ENL5):** OSPF. O R-BORDA aprendeu 10.1.2.144/29 como rota OSPF interna (O) com custo baixo.
+- **MTZ-R2/R3 → MTZ-R1 (ENL1 ou ENL2):** OSPF. A LAN-SRV é anunciada diretamente pelo MTZ-R1 no OSPF.
 
 ---
 
 ### Q16. Falha com rede viva
 
-**ECMP no R-BORDA:**
+**ECMP no R-BORDA antes do shutdown.** O R-BORDA possui duas seriais para a matriz: ENL4 (s0/3/0 → MTZ-R2) e ENL5 (s0/3/1 → MTZ-R3). Ambas as rotas para redes internas da matriz, como o ENL3 (10.1.2.160/30), aparecem com o mesmo custo OSPF ([110/65]) — o custo 65 reflete o custo serial (referência 100 Mbps / 1,544 Mbps ≈ 64) somado ao custo de 1 do enlace GigE de destino. Como os dois caminhos têm custo idêntico, o IOS instala ambos na tabela de rotas (ECMP) e distribui o tráfego entre eles.
 
-```
-O       10.1.2.160/30 [110/65] via 10.1.2.165, 01:49:46, Serial0/3/0
-                      [110/65] via 10.1.2.169, 01:49:46, Serial0/3/1
-```
+**Teste de falha da serial ENL4 (s0/3/0 do MTZ-R2).** Antes do shutdown, o `tracert` do PC-FIL2-1 para o SRV-DC (10.1.2.146) usa o caminho: FIL-R2 (10.1.2.129) → FIL-R1 (10.1.2.177) → R-BORDA (10.1.2.173) → **MTZ-R2 (10.1.2.165)**, salto 4 — via ENL4 — → MTZ-R1 (10.1.2.153) → SRV-DC (10.1.2.146), 6 saltos total.
 
-**tracert 1 (antes do shutdown):**
+Após o `shutdown` na serial ENL4 (s0/3/0 do MTZ-R2), o OSPF detecta a queda: o temporizador Dead (40 s padrão em seriais) expira sem Hellos do vizinho, a adjacência cai e um novo LSA é gerado removendo esse enlace. O R-BORDA recalcula o SPF e instala apenas o caminho pelo ENL5 (s0/3/1 → MTZ-R3). O novo `tracert` confirma: o salto 4 muda de 10.1.2.165 (MTZ-R2 no ENL4) para **10.1.2.169 (MTZ-R3 no ENL5)**, e o próximo salto dentro da matriz no salto 5 passa de 10.1.2.153 (MTZ-R1 via g0/1) para 10.1.2.157 (MTZ-R1 via g0/2) — o tráfego chega ao mesmo destino final pelo caminho alternativo, sem nenhuma intervenção manual.
 
-```
-Tracing route to 10.1.2.146 over a maximum of 30 hops: 
-
-  1   0 ms      0 ms      0 ms      10.1.2.129
-  2   0 ms      13 ms     0 ms      10.1.2.177
-  3   8 ms      1 ms      20 ms     10.1.2.173
-  4   15 ms     20 ms     6 ms      10.1.2.165
-  5   15 ms     18 ms     6 ms      10.1.2.153
-  6   5 ms      12 ms     1 ms      10.1.2.146
-```
-
-**tracert 2 (depois do shutdown):**
-
-```
-C:\>tracert 10.1.2.146
-
-Tracing route to 10.1.2.146 over a maximum of 30 hops: 
-
-  1   0 ms      0 ms      0 ms      10.1.2.129
-  2   1 ms      0 ms      0 ms      10.1.2.177
-  3   1 ms      19 ms     3 ms      10.1.2.173
-  4   2 ms      27 ms     8 ms      10.1.2.169
-  5   16 ms     13 ms     16 ms     10.1.2.157
-  6   12 ms     15 ms     13 ms     10.1.2.146
-
-Trace complete.
-```
-
-**ipconfig /renew com serial derrubada:**
-
-```
-C:\>ipconfig /renew
-
-   IP Address......................: 10.1.2.132
-   Subnet Mask.....................: 255.255.255.240
-   Default Gateway.................: 10.1.2.129
-   DNS Server......................: 0.0.0.0
-
-```
-
-**Explicação:**
+**O DHCP funciona com a serial derrubada.** O `ipconfig /renew` no PC-FIL2-1 retorna endereço 10.1.2.132, máscara 255.255.255.240, gateway 10.1.2.129 — tudo correto para a LAN-FIL2 (10.1.2.128/28). Isso prova que o DISCOVER chegou ao SRV-DC pelo caminho alternativo (via ENL5), o servidor respondeu e o relay no FIL-R2 entregou o OFFER de volta ao PC. A resiliência da rede a uma falha de enlace funciona de ponta a ponta, inclusive para serviços que dependem de roteamento correto na ida e na volta (como DHCP com relay).
 
 ---
 
 ### Q17. A fronteira não é simétrica
 
-```
-MTZ-R1>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
+A Q17 pede a análise comparada das tabelas de rotas do MTZ-R1 (dentro do domínio OSPF) e do FIL-R2 (dentro do domínio RIP), observando como cada um vê as redes do domínio alheio — e por que não existe simetria perfeita entre os dois lados da fronteira.
 
-Gateway of last resort is not set
+**Como o MTZ-R1 vê a filial.** O MTZ-R1 enxerga as redes da filial (LAN-FIL1 10.1.2.96/27, LAN-FIL2 10.1.2.128/28, ENL6 10.1.2.172/30 e ENL7 10.1.2.176/30) como rotas `O E2` com métrica [110/20]. Essas rotas chegam via redistribuição: o R-BORDA importou as redes do RIP para o OSPF com `redistribute rip subnets`, gerando LSAs tipo 5 com métrica padrão 20. O MTZ-R1 não sabe nada sobre as métricas RIP internas dessas redes — só sabe que elas existem e que o caminho passa pelo R-BORDA. Em ECMP, o MTZ-R1 usa dois next-hops (10.1.2.154 via g0/1 rumo ao MTZ-R2, e 10.1.2.158 via g0/2 rumo ao MTZ-R3) porque ambos os caminhos até o R-BORDA têm custo OSPF igual. As redes ENL4 (10.1.2.164/30) e ENL5 (10.1.2.168/30) aparecem como rotas `O` comuns (não E2) com custo 65, porque são interfaces diretamente conectadas do R-BORDA anunciadas pelo próprio R-BORDA no OSPF.
 
-     10.0.0.0/8 is variably subnetted, 15 subnets, 6 masks
-O       10.1.2.0/26 [110/2] via 10.1.2.158, 03:22:27, GigabitEthernet0/2
-O       10.1.2.64/27 [110/2] via 10.1.2.154, 03:22:37, GigabitEthernet0/1
-O E2    10.1.2.96/27 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
-                     [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
-O E2    10.1.2.128/28 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
-C       10.1.2.144/29 is directly connected, GigabitEthernet0/0
-L       10.1.2.145/32 is directly connected, GigabitEthernet0/0
-C       10.1.2.152/30 is directly connected, GigabitEthernet0/1
-L       10.1.2.153/32 is directly connected, GigabitEthernet0/1
-C       10.1.2.156/30 is directly connected, GigabitEthernet0/2
-L       10.1.2.157/32 is directly connected, GigabitEthernet0/2
-O       10.1.2.160/30 [110/2] via 10.1.2.154, 03:22:27, GigabitEthernet0/1
-                      [110/2] via 10.1.2.158, 03:22:27, GigabitEthernet0/2
-O       10.1.2.164/30 [110/65] via 10.1.2.154, 00:00:42, GigabitEthernet0/1
-O       10.1.2.168/30 [110/65] via 10.1.2.158, 02:03:38, GigabitEthernet0/2
-O E2    10.1.2.172/30 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
-O E2    10.1.2.176/30 [110/20] via 10.1.2.154, 00:00:32, GigabitEthernet0/1
-                      [110/20] via 10.1.2.158, 00:00:32, GigabitEthernet0/2
-```
+**Como o FIL-R2 vê a matriz.** O FIL-R2 enxerga as redes da matriz como rotas `R` (RIP) com métrica [120/4] via 10.1.2.177 (FIL-R1). Ele não distingue se a origem foi OSPF ou RIP — para ele, são rotas RIP comuns, redistribuídas pelo R-BORDA com métrica-semente 3 e acrescidas de +1 por cada salto RIP até chegar ao FIL-R2. A única informação disponível é a métrica em saltos, não o custo real nem a topologia interna do OSPF.
 
-```
-FIL-R2>show ip route
-Codes: L - local, C - connected, S - static, R - RIP, M - mobile, B - BGP
-       D - EIGRP, EX - EIGRP external, O - OSPF, IA - OSPF inter area
-       N1 - OSPF NSSA external type 1, N2 - OSPF NSSA external type 2
-       E1 - OSPF external type 1, E2 - OSPF external type 2, E - EGP
-       i - IS-IS, L1 - IS-IS level-1, L2 - IS-IS level-2, ia - IS-IS inter area
-       * - candidate default, U - per-user static route, o - ODR
-       P - periodic downloaded static route
+**Por que a redistribuição não é simétrica.** No sentido OSPF → RIP, o R-BORDA injeta as rotas com `redistribute ospf 1 metric 3`: cada rede OSPF entra no RIP com métrica 3, independentemente do custo OSPF original. No sentido RIP → OSPF, o R-BORDA injeta com `redistribute rip subnets`: cada rede RIP entra no OSPF como rota E2 com métrica padrão 20. As métricas dos dois protocolos são incompatíveis entre si (custo de banda no OSPF vs. contagem de saltos no RIP), então o ponto de redistribuição precisa fixar um valor arbitrário em cada direção — e a escolha dessas métricas-semente (3 para OSPF→RIP, 20 para RIP→OSPF) é uma decisão de projeto.
 
-Gateway of last resort is not set
+**A assimetria no `network 10.0.0.0` e o `passive-interface`.** O FIL-R2 não tem `passive-interface` nas seriais — ele envia e recebe RIP em todas as interfaces ativas. O MTZ-R1, por outro lado, nunca viu o RIP: ele só fala OSPF. O R-BORDA é quem faz a tradução entre os dois mundos, operando como ASBR e usando `passive-interface` para garantir que cada protocolo só cruze as interfaces do seu próprio domínio (conforme explicado na Q11).
 
-     10.0.0.0/8 is variably subnetted, 14 subnets, 6 masks
-R       10.1.2.0/26 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.64/27 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.96/27 [120/1] via 10.1.2.177, 00:00:20, Serial0/0/0
-C       10.1.2.128/28 is directly connected, GigabitEthernet0/0
-L       10.1.2.129/32 is directly connected, GigabitEthernet0/0
-R       10.1.2.144/29 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.152/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.156/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.160/30 [120/4] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.164/30 [120/2] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.168/30 [120/2] via 10.1.2.177, 00:00:20, Serial0/0/0
-R       10.1.2.172/30 [120/1] via 10.1.2.177, 00:00:20, Serial0/0/0
-C       10.1.2.176/30 is directly connected, Serial0/0/0
-L       10.1.2.178/32 is directly connected, Serial0/0/0
-```
-
-**Explicação (redistribuição, network 10.0.0.0, passive-interface):**
+---
